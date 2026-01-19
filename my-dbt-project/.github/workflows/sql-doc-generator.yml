@@ -1,0 +1,74 @@
+name: Free SQL Documentation Generator
+
+on:
+  pull_request:
+    paths:
+      - "models/**/*.sql"
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+jobs:
+  generate-docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v41
+        with:
+          files: models/**/*.sql
+
+      - name: Setup Python
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Ollama
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve &
+          sleep 5
+          ollama pull llama3.2:3b
+
+      - name: Install dependencies
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: pip install pyyaml requests gitpython sqlparse
+
+      - name: Generate documentation
+        if: steps.changed-files.outputs.any_changed == 'true'
+        env:
+          CHANGED_FILES: ${{ steps.changed-files.outputs.all_changed_files }}
+          OLLAMA_HOST: "http://localhost:11434"
+        run: python .github/scripts/doc_generator/main.py
+
+      - name: Commit docs
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          git config user.name "SQL Doc Bot"
+          git config user.email "bot@actions"
+          git add models/**/*.md
+          git diff --cached --quiet || git commit -m "📝 Auto-generate SQL documentation"
+          git push
+
+      - name: Comment on PR
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## 📚 SQL Documentation Generated\n\n**Cost**: $0.00 ✅\n**Generator**: Ollama (Free)\n\nDocumentation files created next to your SQL files.'
+            });
