@@ -1,6 +1,6 @@
 -- Staging model for customer data
 -- Cleans and standardizes raw customer information
--- Updated: Added phone number validation
+-- Fixed subfolder workflow: 2026-01-20
 
 with source as (
     
